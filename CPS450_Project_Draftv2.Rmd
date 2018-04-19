@@ -1,0 +1,381 @@
+---
+title: "Gene Expression Statistics"
+author: "Kyler Kendall"
+date: "4/1/2018"
+output: 
+  prettydoc::html_pretty:
+    theme: leonids
+    highlight: github
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message = TRUE, Warning = FALSE, fig.align = "center")
+library(DataComputing)
+library(ggplot2)
+```
+
+## Introduction
+
+In the 1980s, the National Cancer Institute developed a set of 60 cancer cell lines, called `NCI60`. The purpose of the original project was to screen these cell lines to help create anti-cancer drugs. For this project more than 41,000 probes were used on each of the 60 cell lines. 
+
+This explanation of these processes and background knowledge will just cover the basic information that one might need to know to help better understand how the biological procedures determine whether a certain gene in a cell line is linked to a certain type of cancer. As you already know, the NCI 60 cell lines were used for this project, which were taken from sixty patients, each with different types of cancer which included: Breast, Central Nervous System(CNS), Colon, Leukemia, Melanoma, Non-Small Cell Lung, Ovarian, Prostate, and Renal. On each cell line over 41,000 probes were used. Probes are pre-defined DNA oligonucleotides, or short DNA molecules that bind to complementary strands. These probes were linked to specific genes in the cell lines. 
+
+To determine whether a specific gene in a cell line was linked to being cancerous or not microarrays were used. A microarray is a glass chip with thousands of wells in the chip where there are complementary strands of mRNA that are fixed into the wells. These complementary strands are what the probes bind to. The microarray is used to determine a gene's expression level. Gene expression is the gene activity regulated at the level of transcription by DNA-binding proteins that interact with other proteins and external signal. In other words, it is the number of proteins being produced from the gene's RNA sequence. So, when the tests are done using the microarrays, scientists use a testing sample, which includes the cancerous cell line samples, and they use a reference sample, which is the same cell line, but not cancerous. Both of these samples are labeled to where a computer can determine a difference between the two labels. Once the tests are completed the microarrays are put inside a machine that analyzes which sample was able to bind to the complementary strands more. The machine then calculates the gene expression level by a formula of $log_2(T/R)$ where T equals the gene expression for the testing sample, and R equals the gene expression for the reference sample. What this means is that when the computer is reading the contents of each well it looks at the ratio of labeled cancerous cell genes against the labeled normal cell genes. If the well on the chip shows a closer resemblance to the cancerous gene label, in this instance lets say the cancerous gene is labled with a blue dye, then we know the that gene is being produced more in a cancerous cell than it is in a normal cell, this will be represented by a more positive value. But, if the well shows more of resemblance to the normal gene label, in this case lets say its labeled with a yellow, then we know that gene is being produced less by the cancerous cell than it is by the normal cell, this will be represented by a more negative value. If the well resembles an approximate equal mixture of both, or looks green, then we know there is no change in the gene production from normal to cancerous cell, this would be represented by a value closer to zero. 
+
+
+Knowing the gene expression levels of genes in cancerous cells can be very helpful for medicinal purposes. Say, for example scientists find that a specific gene is being produced more by a certain cancer than it would be for a person who did not have cancer. Well, scientists can now produce a medicine to help inhibit that gene from being produced, and if someone were diagnosed with that certain cancer then they would be prescribed this medication. 
+
+The purpose of this project is to determine whether genes are related to cancer in any way based upon their gene expression levels. With the gene’s expressions, we will use two different approaches in determining if a gene is related to a cancer. One will be graphing the gene’s data and creating confidence intervals for the data, which will help indicate where the data of the NCI 60 cells lies in comparison to 95% of the population of people with cancer. The other will be computing the gene’s $r^2$ value, which is a value between 0 and 1 that measures how closely related a probes data is to its regression line. 
+
+
+## Analysis
+
+### Data Processing
+
+As with any project with large data tables, we must begin by cleaning up our data and sorting it by what we need and do not need. For this project we will need both the `NCI60` and `NCI60cells` data. 
+```{r echo=FALSE, warning=FALSE}
+NCI60 %>%
+  head(10) %>%
+  DT::datatable(options = list(
+      scrollX = TRUE))
+```
+```{r echo=FALSE, warning=FALSE}
+NCI60cells %>%
+   head(10) %>%
+  DT::datatable(
+    options = list(
+      scrollX = TRUE))
+```
+
+For this first code chunk we are tidying the NCI60 data by taking it from its original wide table format to a narrow table format. This makes each row have its own probe, a single cell line, and the expression of the probe in that particular cell line, instead of a single row having one probe and the expressions of that probe in all the cell lines. This makes it much easier for one to read, and also allows for quick finding of a probe's expression value in a particular cell line.
+
+```{r, warning=FALSE}
+Narrow <- 
+  NCI60 %>%
+  tidyr:: gather(cellLine, expression, -Probe)
+
+Narrow %>%
+  head(10) %>%
+  DT::datatable()
+```
+
+In the above table you see the variables `Probe`, `cellLine`, and `expression`. `Probe` is the name of the specific probe used on the each cell line. `cellLine` is the name given to each cell line in the NCI 60. Finally, `expression` is the gene/probe's expression level in the cell line.
+
+For this next chunk of code where we are dealing with the `NCI60cells` data we only need the `cellLine` and `tissue` variables from this table. The other information in the original table is not needed for our purposes. Also, we must substitute the ":" in the 'cellLine' variable with a ".", so that the tidied `NCI60` and `NCI60cells` tables can be properly joined.
+
+```{r}
+CellTypes <-
+  NCI60cells %>%
+  select(cellLine, tissue) %>%
+  mutate(cellLine = gsub("\\:", ".", as.character(cellLine)))
+
+CellTypes %>%
+  head(10)%>%
+  DT::datatable()
+```
+In this table you can see that we now only have two variables, the `cellLine` variable and the `tissue` variable. The `cellLine` variable is the exact same variable as in the first table. The `tissue` variable tells what kind of tissue each `cellLine` is from.
+
+Once the two tables are joined, we can now see what type of tissue each individual cell line is from, as well as the expression level of each probe on that cell line.
+```{r, message=FALSE, warning = FALSE}
+Narrow <- 
+  Narrow %>%
+  inner_join(CellTypes)
+
+Narrow %>%
+  head(10)%>%
+  DT::datatable()
+```
+
+### Cancer and a Single Gene: Two Approaches
+
+When observing the data for a gene all we have to look at is its expression values. There are two ways that help us figure out a specific gene's relationship to cancer, one being a graphical approach where we graph confidence intervals for the genes, and the second being a numerical approach where we compute the $R^2$ value of a gene. These approaches are very different, but both use the gene's expression values. 
+
+Now that we have properly joined the two tables lets look into some of the data. I have already taken the liberty in choosing the `TOP3A` probe from the data set, as shown below in the code.
+```{r, warning=FALSE}
+Probe_TOP3A <-
+  Narrow %>%
+  filter(Probe=="TOP3A")
+
+Probe_TOP3A %>%
+   head(10) %>%
+  DT::datatable()
+```
+
+#### Graphical Approach
+
+Lets see what the data for the `TOP3A` probe looks like...
+```{r, fig.cap = "This graph shows the individual data points of the probe TOP3A in each tissue type."}
+Probe_TOP3A %>%
+  ggplot(aes(x = tissue, y = exp(expression))) +
+  geom_jitter(width = 0.3) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+As we can see from the graph there is not much variation in the data points between the tissue types. You may ask why there are no negative numbers on the graph as represented by some of the expression values in the table above. Well, that is because the expression values were exponentiated with the `exp()` function so that there would be no negative numbers shown on the graph.
+
+Now lets do some calculations on the data from the `TOP3A` probe ...
+```{r}
+SummaryStats_example <-
+  Probe_TOP3A %>%
+  group_by(tissue) %>%
+  summarise(mn = mean(expression, na.rm = TRUE),
+            se = sd(expression, na.rm = TRUE)/sqrt(n())) %>%
+  mutate(top = mn + 1.96 * se,
+         bottom = mn - 1.96 * se)
+```
+
+As you can see in the above code we grouped the data by tissue type and calculated the average expression value of each group. We also took the same expression values and calculated a standard deviation of each group. Then, we created top and bottom variables to help aid us in the making of confidence intervals so as to help explain the data better. 
+
+The importance of confidence intervals in this project is to help us determine whether or not a specific gene is related to a certain type of cancer or not. We can do this by comparing the intervals to each other. But, what is a 95% confidence interval to begin with, and how is it computed? Well a 95% confidence interval is an interval, with the top and bottom numbers being the mean, of a random sample of a population, plus or minus 1.96 multiplied by one standard error, also for this project the top and bottom numbers are then exponentiated to match the data. So, the interval that these calculations create, from the randomly sampled group, will have a 95% chance to contain the mean value of the entire population.
+
+```{r,include=FALSE}
+mins <- round(exp(SummaryStats_example$bottom),2)
+maxes <- round(exp(SummaryStats_example$top),2)
+breast_min <- mins[1]
+breast_max <- maxes [1]
+colon_min <- mins[3]
+colon_max <- maxes [3]
+leukemia_min <- mins[4]
+leukemia_max <- maxes [4]
+```
+
+```{r, fig.cap = "This graph displays all the data of the probe TOP_3A put together. The red bar on the error bar displays where the mean of the data is.", warning=FALSE}
+Probe_TOP3A %>%
+  ggplot(aes(x = tissue, y = exp(expression))) +
+  geom_jitter(width = 0.3) +
+  geom_errorbar(data = SummaryStats_example,
+                aes(x = tissue,
+                    y = exp(mn),
+                    ymax = exp(top),
+                    ymin = exp(bottom)), width = 0.5) +
+   geom_segment(data = SummaryStats_example,
+                aes(x = as.numeric(tissue) - 0.1, 
+                    y = exp(mn), 
+                    xend = as.numeric(tissue) + 0.1, 
+                    yend = exp(mn)), color = "red", size = 1) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+Let's look at the first probe we used, the TOP3A probe, and discuss just what is going on with all these confidence intervals for the different tissue types. Lets start by looking at the Breast tissue confidence interval. As you can see the top interval is at `r breast_max` and the bottom interval is at `r breast_min`, this means that we are 95% confident that the mean expression of the TOP3A gene for the entire population of people with breast cancer is somewhere in between these two points. 
+
+Next, lets look at the Colon confidence interval. Its upper bound is `r colon_max` and its lower is `r colon_min`. The interval stands for the exact same thing as the Breast interval, except that it is the interval for the mean expression of the TOP3A gene for the whole population of people with colon cancer instead. Now looking at these two intervals we can see that they do not overlap at all. So, this tells us that there is very little possibility that the means of these two tissue types for this probe are the same. But, when we look at the breast confidence interval and the leukemia confidence interval, it's quite the opposite, we can see that these two intervals overlap. This means that there is a good possibility that the two means of the separate populations are nearly the same mean. After seeing this you can see how the means for each of the different tissue types have a possibility of being the same if confidence intervals are overlapping, and is not related to any cancer in particular.
+
+#### Numerical Approach: $r^2$
+
+Each gene in this data set has a relationship with the type of cancer. So, how do we know whether a gene is associated or linked to a certain cancer in particular? We have already looked a gene's relationship through graphical methods, but what about a numerical relationship? Well, lucky for us there is a function that helps us to compute a numerical relationship between a gene's expression and type of cancer called $r^2$ (pronounced r-squared). The value of $r^2$ can only be between 0 and 1. The closer the value is to 0 the data shows little evidence of a relationship between a gene and any type of cancer, but the closer the value is to 1 the data strongly indicates a relationship between a gene and a type of cancer.
+
+The process of computing an $r^2$ value is a little more complicated than one might think, and there are some mathematics, that go behind the scenes, that one may not necessarily know about or understand. To get started we must define a few terms to help compute $r^2$ :
+
+>$\hat{y}$ = prediction of y when x is plugged in
+
+>$\bar{y}$ = the mean of all y values in the data
+
+##### For graphs where x and y are both quantitative variables
+
+This is the equation for the Treatment Sum of Squares (SSM):
+$$\sum_{i=1}^n(\hat{y_i} - \bar{y})^2$$
+This is the sum of squares of the differences between a specific y point on the regression line, which is correlated to an individual y value in the data, and the mean of all y values.
+
+
+
+This is the equation for the Error Sum of Squares (SSE):
+$$\sum_{i=1}^n({y_i} - \hat{y_i})^2$$
+This is the sum of the square of the differences between the y value of each individual point and the y-coordinate of the regression line at that point.
+
+
+
+This is the equation for the Total Sum of Squares (SST):
+$$\sum_{i=1}^n({y_i} - \bar{y})^2$$
+This quantity gives the sum of the square of differences between the y values of each point and the mean of all y values.
+
+$r^2$ is a value which consists of a combination of these sums. Below you can see some of the facts about the sums 
+
+##### Facts about the Sums
+
+
+* $SST = SSM + SSE$ **ALWAYS**
+
+* $r^2 = \frac{SSM}{SST}$
+
+* $0 \leq r^2 \leq 1$
+
+* regression line $\approx$ $\bar{y}$-line
+    * $SSE \approx SST$
+    * So, $SSM \approx 0$
+    * So, $r^2 \approx 0$
+    
+* regression line $\approx$ data
+    * $SSE \approx 0$
+    * So, $SSM \approx SST$
+    * So, $r^2 \approx 1$
+    
+So, the above sums are used for types of graphs where the x and y values are both quantitative, but also they are used with slightly different formulas in graphs where x values are categorical and y values are quantitative, which is exactly how the data that we have collected is laid out. Below you will see the differences in the formulas for the sums when x becomes categorical. 
+
+##### For graphs where x is a categorical variable and y is a quantitative variable
+
+>$\hat{y}$ = prediction of y when x is plugged in
+
+>$\bar{y}$ = the mean of all y values in the data
+
+>$n_a$ = number of data in the "a" category
+
+>$\bar{y_a}$ = the mean of all y values in the data of category a
+
+>$\bar{y_b}$ = the mean of all y values in the data of category b
+
+>$\bar{y_c}$ = the mean of all y values in the data of category c
+
+SSM:
+$$n_a(\bar{y_a} - \bar{y})^2 + n_b(\bar{y_b} - \bar{y})^2 + n_c(\bar{y_c} - \bar{y})^2$$
+
+SSE:
+$$\sum_{i=1}^{n_a} (y_{ai} - \bar{y_a})^2 + \sum_{i=1}^{n_b}(y_{bi} - \bar{y_b})^2 + \sum_{i=1}^{n_c}(y_{ci} - \bar{y_c})^2$$
+
+SST:
+$$\sum_{i=1}^{n}(y_i - \bar{y})^2$$
+
+To get a better understanding of what the graphs may look like for these sums with categorical x variables here is an online app to help understand: <a href="https://bl.ocks.org/homerhanumat/4f315ccae8707b64236500da7e35810a" target="_blank">Online $R^2$ App</a>.
+
+As you can see from the app, there are three sliders with random data points for each. Each slider also has a solid blue line, which represents the mean of the entire population, and a red dotted line, which represents the current sample's mean. As you notice as you move the population mean up and down the app recalculates the $R^2$ value. Try to maneuver the sliders were set where the $R^2$ value was either higher or lower? Think about how those graphs looked like and how the data was either spread out or close together. As you spread the sliders apart from each other you can see that the $R^2$ value get bigger, but the closer the different sliders are to each other the lower the value gets. 
+
+Now that you have an understanding of what the sums are for computing the $r^2$ value for each probe, we will see what kind of $r^2$ values our probes had, and discuss our findings.
+
+```{r}
+r2 <- function(data) {mosaic::rsquared(lm(data$expression ~ data$tissue))}
+```
+
+When we looked at the gene `TOP3A` we saw that the data was very spread out and the average expressions in the tissues were rather close. So, lets take what we now know about the $r^2$ values and apply it to the  `TOP3A` probe:
+```{r, echo=FALSE}
+Narrow %>% 
+  filter(Probe == "TOP3A") %>% 
+  r2()
+```
+
+As you can see, this $r^2$ value is pretty close to 0. We can gather from this finding that the Treatment Sum of Squares is close to 0. What this means is that this gene is not related to any particular cancer type, due to the fact that the data for each category of cancer is so closely related. So, the data shows a similar pattern to that of the mean of the data for the gene as a whole.
+
+### Cancer and a Single Gene: Another Gene
+
+Now, lets take a look at another gene, but this time lets choose a gene with a high $r^2$ value. First, we must compute the values of all the probes in the data, which is what is being done below in the code. 
+```{r cache = TRUE}
+ProbeR2 <- 
+  Narrow %>%
+  group_by(Probe) %>%
+  do(r2 = r2(.)) %>%
+  mutate(r2 = unlist(r2))
+```
+
+We have now calculated all the $r^2$ values of the probes in the data, but like we said we want to pick one with a rather high $r^2$ value this time. To do this we must reorder the data according to their $r^2$ values from highest to lowest. From there I selected to only work with the top 30 highest valued probes. 
+```{r}
+Actual <-
+  ProbeR2 %>%
+  arrange(desc(r2)) %>%
+  head(30) %>%
+  mutate(Probe = reorder(Probe, desc(r2)))
+```
+
+To show the values of these top 30 values we will graph them so that you can see them for yourself. 
+```{r, message = FALSE, fig.cap = "Graph of top 30 probes."}
+Actual %>%
+  ggplot(aes(x = Probe, y = r2)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+After examining the graph, the `A_23_P61317` probe seems like a likely candidate, being that it has the highest $r^2$ value. Let's do the same setup and calculations to it as we did the `TOP3A` probe.
+
+```{r}
+Probe_A_23_P61317 <-
+  Narrow %>%
+  filter(Probe == "A_23_P61317")
+```
+
+```{r}
+SummaryStats <-
+  Probe_A_23_P61317 %>%
+  group_by(tissue) %>%
+  summarise(avg = mean(expression, na.rm = TRUE),
+            se = sd(expression, na.rm = TRUE) / sqrt(n())) %>%
+  mutate(top = avg + 2 * se,
+         bottom  = avg - 2 * se)
+```
+
+```{r, warning=FALSE, message = FALSE, fig.cap = "This graph shows all the data for the probe A_23_P61317 put together."}
+Probe_A_23_P61317 %>%
+  ggplot(aes(x = tissue, y = exp(expression))) +
+  geom_jitter(width = 0.3) +
+  geom_errorbar(data = SummaryStats,
+                aes(x = tissue,
+                    y = exp(avg),
+                    ymax = exp(top),
+                    ymin = exp(bottom)), width = 0.5) +
+   geom_segment(data =SummaryStats,
+                aes(x = as.numeric(tissue) - 0.1, 
+                    y = exp(avg),
+                    xend = as.numeric(tissue) + 0.1, 
+                    yend = exp(avg)), color = "red", size = 1) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+As you can see in the graph of probe `A_23_P61317` the highest expression values are in the Prostate tissue type, which seems to be the only tissue that has data greater than 0. This is what a probe's data looks like when it has a high $r^2$ value, compared to the graph of `TOP3A` there is a significant difference in the two. It would be safe to assume that the `A_23P61317` gene is closely associated to prostate cancer, due to the fact that the data is not overlapping with the other cancer types. Also, this would mean that the cluster of data for prostate cancer is not close to the mean of all the gene's data.
+
+As we can also see in this, the prostate confidence interval does not overlap any of the other eight cancer types. So, this means that there is no possibility for the mean of the prostate population to be the same as any of the other populations. Since this is the case we can safely say that this gene is related to prostate cancer in some way, and not any other type of cancer. So, as you can see between the two different probe's confidence intervals that when you have overlapping confidence intervals you can not associate that specific probe, or gene, to any cancer in particular, but when there is a confidence interval that does not overlap with any other you can then associate that specific gene with that particular type of cancer. 
+
+### Cancer and Many Genes
+
+#### Problem of Data Snooping
+
+Say we were to take these two genes, or even just one of them, and base our hypothesis off of that single gene's data, this creates a problem statisticians call data snooping. Data snooping in this case would be taking a single gene and coming to a conclusion about that single gene without taking into account all other genes in the data. So, for example if you were to take just the `A_23_P61317` gene and say that it is likely related to prostate cancer based on its $r^2$ value and its data distribution without including any of the other genes in the data, then that would be data snooping. To prevent this from happening, we must take into account all the other genes and their data, so that we know whether a gene is more likely to be associated to a specific cancer or not.
+
+Let's look at another example to help explain data snooping a little bit easier. Say we gather 100 friends and we are wanting to see if they have any special powers. We make each person flip a coin 100 times and record the data. When looking at the data if we were to pick out a person whos coin turned up heads say 70 times, and just use that person's number of heads to constitute them having special powers, then this would be considered data snooping. Since we are not looking at all 100 people's number of heads they flipped then the probability the person who flipped 70 heads has special powers is quite high. But, if we start adding in all the other number of heads people flipped then this probability goes down due to the fact flipping 70 heads was only by chance since you only have a 50% chance of flipping a head any time you flip a coin. 
+
+#### Solution: Random Shuffling
+
+So, how do we know that the probes didn't get the results they did by chance? We don't! But, one way to solve that problem and make sure that a gene is associated to a certain type of cancer not by chance is to shuffle the data of each probe to make sure that the actual data points are no longer associated with any probe in particular. This creates the null hypothesis that no gene is associated to any certain cancer type. Once the data has been shuffled for each probe their $r^2$ value is again computed. A reminder that this is the value that says whether a gene is related to a certain cancer type or not based on the expressions of the probe in the different tissues. 
+
+```{r cache = TRUE}
+NullR2 <-
+  Narrow %>%
+  group_by(Probe) %>%
+  mutate(expression = mosaic::shuffle(expression)) %>%
+  group_by(Probe) %>%
+  do(r2 = r2(.)) %>%
+  mutate(r2 = unlist(r2))
+```
+
+After shuffling the data and again computing the $r^2$ values of each probe, we then sort arrange all the newly shuffled probes in order by their $r^2$ values. 
+```{r}
+Null <-
+  NullR2 %>%
+  arrange(desc(r2)) %>%
+  head(30)
+```
+
+```{r include=FALSE}
+Actual$null <- Null$r2
+```
+
+```{r, fig.cap = "This graph compares the distributions of the both the actual data (dark gray distribution) and the null hypothesis data (light gray distribution), using their R^2 values for comparison."}
+ProbeR2 %>%
+  ggplot(aes(x = r2)) +
+  geom_density(fill = "gray30", color = NA) +
+  geom_density(data = NullR2, aes(x = r2),
+               fill = "gray80", alpha = .75, color = NA)
+```
+
+As seen, the actual data has a wider range of $r^2$ values with the majority of the values falling before 0.6, but the null data has a much smaller range of values with the majority of its values falling before 0.3.
+
+```{r, fig.cap = "This graph displays the difference $r^2$ values in the top 30 probes from the actual data (black dot) to the data produced by the expression shuffling of the same probes (gray dot)."}
+Actual %>%
+  ggplot(aes(x = Probe, y = r2)) +
+  geom_point() +
+  geom_point(aes(y = null), color = "gray50") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+As you can see the $r^2$ values are much lower after the the data was shuffled. The top 30 $r^2$ values are still fairly high though, meaning that those genes are still likely to be associated with whatever type of cancer their expressions favor.  
+
+
+## Discussion
+
+Throughout this project we have looked at two different genes from the `NCI60` data set and computed their expressions in different tissues. What we have learned form these two genes is that when a gene's expressions are widely spread across multiple tissues, then it is more than likely not associated with any cancer types. But, when a gene's expressions are more focused on one type of tissue it is safe to say that it is likely associated with that type of cancer. So, the question may come up, 'Why is it that when a gene's $r^2$ value is low the likelihood of that gene being associated to a cancer is small?', that would be because the sample size of the provided data is so small that it is hard to determine whether that gene is associated to any cancer in particular. This is why the gene shuffling is performed due to the chance that a gene could've been associated with a cancer by sheer luck. 

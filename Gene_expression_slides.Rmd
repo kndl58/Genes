@@ -1,0 +1,156 @@
+---
+title: "Gene Expressions and Cancer"
+author: "Kyler Kendall"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message = TRUE, Warning = FALSE, fig.align = "center")
+library(DataComputing)
+library(ggplot2)
+```
+
+# Introduction
+
+## Backgorund of Project
+
+In the 1980s, the National Cancer Institute developed a set of 60 cancer cell lines, called NCI60. The original purpose of the project was for screening anti-cancer drugs. More than 41,000 probes were used on each of the 60 cell lines. The numbers in the NCI60 data set are how much a particular gene was expressed in one cell line. One way to tell how a gene is related to cancer is the differences in expression of that gene from one cancer type to another.
+
+## Biology Talk
+
+* What is a gene's expression level?
+
+>* How is it calculated?
+    * $log_2(T/R)$
+>* What does the expression level tell us about the gene in a cancerous cell?
+    * Upregulation
+    * Downregulation
+    * No change
+
+# Analysis
+
+## Let's get started!
+
+```{r echo=FALSE, warning=FALSE}
+NCI60 %>%
+  head(10) %>%
+  knitr::kable()
+```
+
+## 
+
+```{r echo=FALSE, warning=FALSE}
+NCI60cells %>%
+   head(10) %>%
+  knitr::kable()
+```
+
+## Clean Up of `NCI60`
+
+```{r, warning=FALSE}
+Narrow <- 
+  NCI60 %>%
+  tidyr:: gather(cellLine, expression, -Probe)
+```
+
+##
+
+```{r}
+Narrow %>%
+  head(10) %>%
+  knitr::kable()
+```
+
+## Onto `NCI60cells`
+
+```{r}
+CellTypes <-
+  NCI60cells %>%
+  select(cellLine, tissue) %>%
+  mutate(cellLine = gsub("\\:", ".", as.character(cellLine)))
+```
+
+##
+
+```{r}
+CellTypes %>%
+  head(10)%>%
+  knitr::kable()
+```
+
+## Now Let's Join Them
+
+```{r, message=FALSE, warning = FALSE}
+Narrow <- 
+  Narrow %>%
+  inner_join(CellTypes)
+```
+
+## That's What We Want!
+
+```{r,echo=FALSE, message=FALSE, warning = FALSE}
+Narrow %>%
+  head(10)%>%
+  knitr::kable()
+```
+
+## Let's Pick a Gene
+
+```{r, warning=FALSE}
+Probe_TOP3A <-
+  Narrow %>%
+  filter(Probe=="TOP3A")
+```
+
+##
+
+```{r}
+Probe_TOP3A %>%
+   head(10) %>%
+  knitr::kable()
+```
+
+## Graphing the Data
+
+```{r, fig.cap = "This graph shows the individual data points of the probe TOP3A in each tissue type.", echo=FALSE}
+Probe_TOP3A %>%
+  ggplot(aes(x = tissue, y = exp(expression))) +
+  geom_jitter(width = 0.3) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+## We can do better!
+
+```{r, echo = FALSE}
+SummaryStats_example <-
+  Probe_TOP3A %>%
+  group_by(tissue) %>%
+  summarise(mn = mean(expression, na.rm = TRUE),
+            se = sd(expression, na.rm = TRUE)/sqrt(n())) %>%
+  mutate(top = mn + 1.96 * se,
+         bottom = mn - 1.96 * se)
+```
+
+```{r, fig.cap = "This graph displays all the data of the probe TOP_3A put together. The red bar on the error bar displays where the mean of the data is.", warning=FALSE, echo=FALSE}
+Probe_TOP3A %>%
+  ggplot(aes(x = tissue, y = exp(expression))) +
+  geom_jitter(width = 0.3) +
+  geom_errorbar(data = SummaryStats_example,
+                aes(x = tissue,
+                    y = exp(mn),
+                    ymax = exp(top),
+                    ymin = exp(bottom)), width = 0.5) +
+   geom_segment(data = SummaryStats_example,
+                aes(x = as.numeric(tissue) - 0.1, 
+                    y = exp(mn), 
+                    xend = as.numeric(tissue) + 0.1, 
+                    yend = exp(mn)), color = "red", size = 1) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+## What Are Confidence Intervals?
+
+
+# Discussion
+
+## Here's What We Know
